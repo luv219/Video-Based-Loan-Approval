@@ -3,7 +3,7 @@
 import Navbar from "../components/Navbar";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 export default function Apply() {
   const { isSignedIn, isLoaded } = useUser();
@@ -18,12 +18,16 @@ export default function Apply() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState(null);
-  const [recordedChunks, setRecordedChunks] = useState([]);
+  const [setRecordedChunks] = useState([]);
   const [userAnswerText, setUserAnswerText] = useState("Your answer will appear here...");
   const [userStream, setUserStream] = useState(null);
   const [showQuery, setShowQuery] = useState(false);
   const [queryInput, setQueryInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  
+  // Refs for direct DOM access
+  const userWebcamRef = useRef(null);
+  const avatarVideoRef = useRef(null);
 
   // Questions for video application
   const questions = [
@@ -57,6 +61,43 @@ export default function Apply() {
       }
     };
   }, [isSignedIn, isLoaded, router, userStream]);
+
+  // Initialize webcam as soon as video mode is selected
+  useEffect(() => {
+    if (applicationMode === 'video') {
+      initWebcam();
+    }
+  }, [applicationMode]);
+
+  // Initialize webcam
+  const initWebcam = async () => {
+    try {
+      // Request both video and audio permissions right away
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: "user"
+        }, 
+        audio: true 
+      });
+      
+      setUserStream(stream);
+      
+      // Set the stream to the video element using ref
+      if (userWebcamRef.current) {
+        userWebcamRef.current.srcObject = stream;
+        
+        // Make sure video autoplays and shows live preview
+        userWebcamRef.current.onloadedmetadata = () => {
+          userWebcamRef.current.play().catch(e => console.error("Error playing user webcam:", e));
+        };
+      }
+    } catch (error) {
+      console.error("Error accessing media devices:", error);
+      setUserAnswerText("Error: Unable to access camera or microphone. Please check your permissions.");
+    }
+  };
 
   const handleEligibilityCheck = (e) => {
     e.preventDefault();
@@ -95,24 +136,37 @@ export default function Apply() {
     setApplicationMode(null);
     setCurrentQuestionIndex(0);
     setShowQuery(false);
+    setQueryInput("");
+    setErrorMessage("");
+    setUserAnswerText("Your answer will appear here...");
     
     // Stop any active streams
     if (userStream) {
       userStream.getTracks().forEach(track => track.stop());
       setUserStream(null);
     }
+    
+    // Reset recording state
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+    setMediaRecorder(null);
+    setRecordedChunks([]);
+    setIsRecording(false);
   };
 
   // Function to play video
-  const playVideo = (folder, videoName, videoElementId) => {
+  const playVideo = (folder, videoName) => {
     return new Promise((resolve) => {
-      const videoElement = document.getElementById(videoElementId);
-      if (!videoElement) {
+      if (!avatarVideoRef.current) {
         resolve();
         return;
       }
       
+      // Using ref instead of getElementById
+      const videoElement = avatarVideoRef.current;
       const videoSource = videoElement.querySelector('source');
+      
       videoSource.src = `Videos/${folder}/${videoName}`;
       videoElement.load();
       
@@ -133,18 +187,20 @@ export default function Apply() {
     setEligibilityChecked(false);
     setShowResult(false);
     
-    // Play intro video
-    await playVideo("Intro", "intro.mp4", "avatarVideo");
-    playNextQuestion();
+    // Play intro video after a short delay to allow webcam to initialize
+    setTimeout(async () => {
+      await playVideo("Intro", "intro.mp4");
+      playNextQuestion();
+    }, 1000);
   };
 
   // Play next question in video application
   const playNextQuestion = async () => {
     if (currentQuestionIndex < questions.length) {
       let questionVideo = questions[currentQuestionIndex].video;
-      await playVideo("Question Videos", questionVideo, "avatarVideo");
+      await playVideo("Question Videos", questionVideo);
     } else {
-      await playVideo("Intro", "query.mp4", "avatarVideo");
+      await playVideo("Intro", "query.mp4");
       setUserAnswerText("All questions answered! Ask any query now.");
       setShowQuery(true);
     }
@@ -153,15 +209,11 @@ export default function Apply() {
   // Start recording user's answer
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      setUserStream(stream);
-      
-      const videoElement = document.getElementById("userWebcam");
-      if (videoElement) {
-        videoElement.srcObject = stream;
+      if (!userStream) {
+        await initWebcam();
       }
       
-      const recorder = new MediaRecorder(stream);
+      const recorder = new MediaRecorder(userStream);
       setMediaRecorder(recorder);
       
       const chunks = [];
@@ -173,7 +225,8 @@ export default function Apply() {
       recorder.start();
       setIsRecording(true);
     } catch (error) {
-      console.error("Error accessing media devices:", error);
+      console.error("Error starting recording:", error);
+      setUserAnswerText("Error: Unable to start recording. Please check your camera and microphone permissions.");
     }
   };
 
@@ -188,7 +241,7 @@ export default function Apply() {
         setUserAnswerText(`Answer: Recorded for "${questions[currentQuestionIndex].question}"`);
         
         // Move to next question
-        setCurrentQuestionIndex(currentQuestionIndex + 1);
+        setCurrentQuestionIndex(prevIndex => prevIndex + 1);
         setTimeout(playNextQuestion, 2000);
       }, 1000);
     }
@@ -207,7 +260,7 @@ export default function Apply() {
     }
     
     if (matchedVideo) {
-      playVideo("Answer Videos", matchedVideo, "avatarVideo");
+      playVideo("Answer Videos", matchedVideo);
     } else {
       setErrorMessage("Sorry, I don't have an answer for that.");
     }
@@ -352,15 +405,30 @@ export default function Apply() {
               {/* Avatar Video */}
               <div className="flex-1">
                 <p className="mb-2 font-medium">AI Assistant</p>
-                <video id="avatarVideo" className="w-full rounded-md" playsinline autoplay>
-                  <source id="videoSource" src="Videos/Intro/intro.mp4" type="video/mp4" />
+                <video 
+                  ref={avatarVideoRef}
+                  className="w-full rounded-md border-2 border-blue-300" 
+                  playsInline 
+                  autoPlay
+                >
+                  <source src="Videos/Intro/intro.mp4" type="video/mp4" />
+                  Your browser does not support video playback.
                 </video>
               </div>
               
-              {/* User's Webcam */}
+              {/* User's Webcam - Now with live preview */}
               <div className="flex-1">
-                <p className="mb-2 font-medium">You</p>
-                <video id="userWebcam" className="w-full rounded-md" autoplay></video>
+                <p className="mb-2 font-medium">You {isRecording && <span className="text-red-500">(Recording)</span>}</p>
+                <video 
+                  ref={userWebcamRef}
+                  className={`w-full rounded-md ${isRecording ? 'border-2 border-red-500 pulse-recording' : 'border-2 border-green-300'}`}
+                  playsInline 
+                  autoPlay 
+                  muted
+                >
+                  Your browser does not support video playback.
+                </video>
+                {!userStream && <p className="text-sm text-center mt-2">Initializing camera...</p>}
               </div>
             </div>
             
@@ -373,15 +441,13 @@ export default function Apply() {
             {!showQuery && (
               <div className="flex gap-4 mt-4">
                 <button 
-                  id="startButton" 
                   onClick={startRecording}
-                  disabled={isRecording}
+                  disabled={isRecording || !userStream}
                   className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition duration-300 disabled:bg-gray-400"
                 >
                   Start Answering
                 </button>
                 <button 
-                  id="stopButton" 
                   onClick={stopRecording}
                   disabled={!isRecording}
                   className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition duration-300 disabled:bg-gray-400"
@@ -450,6 +516,19 @@ export default function Apply() {
           </div>
         )}
       </div>
+      
+      {/* Add some custom CSS for the recording indicator */}
+      <style jsx>{`
+        @keyframes pulse {
+          0% { border-color: rgba(239, 68, 68, 0.7); }
+          50% { border-color: rgba(239, 68, 68, 1); }
+          100% { border-color: rgba(239, 68, 68, 0.7); }
+        }
+        
+        .pulse-recording {
+          animation: pulse 1.5s infinite;
+        }
+      `}</style>
     </div>
   );
 }
