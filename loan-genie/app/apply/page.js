@@ -12,12 +12,51 @@ export default function Apply() {
   const [isEligible, setIsEligible] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [resultMessage, setResultMessage] = useState("");
+  const [applicationMode, setApplicationMode] = useState(null); // 'manual' or 'video'
+  
+  // Video application states
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState(null);
+  const [recordedChunks, setRecordedChunks] = useState([]);
+  const [userAnswerText, setUserAnswerText] = useState("Your answer will appear here...");
+  const [userStream, setUserStream] = useState(null);
+  const [showQuery, setShowQuery] = useState(false);
+  const [queryInput, setQueryInput] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  // Questions for video application
+  const questions = [
+    { video: "Q_Contact.mp4", question: "What is your contact information?" },
+    { video: "Q_EmploymentType.mp4", question: "Are you salaried or self-employed?" },
+    { video: "Q_LoanAmount.mp4", question: "What loan amount are you applying for?" },
+    { video: "Q_LoanTenure.mp4", question: "What is the tenure of the loan in years?" },
+    { video: "Q_LoanType.mp4", question: "What type of loan are you applying for?" },
+    { video: "Q_MonthlyIncome.mp4", question: "What is your monthly income?" }
+  ];
+
+  // Query answers mapping
+  const queryAnswers = {
+    "cibil score": "CIBILScore.mp4",
+    "late payment": "LatePayment.mp4",
+    "loan eligibility": "LoanEligibility.mp4",
+    "loan interest rate": "LoanRate.mp4",
+    "secure loan vs unsecure loan": "SecureVsUnsecureLoan.mp4",
+    "types of loans": "TypesOfLoans.mp4"
+  };
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       router.push("/");
     }
-  }, [isSignedIn, isLoaded, router]);
+
+    // Clean up function for video streams
+    return () => {
+      if (userStream) {
+        userStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [isSignedIn, isLoaded, router, userStream]);
 
   const handleEligibilityCheck = (e) => {
     e.preventDefault();
@@ -50,13 +89,131 @@ export default function Apply() {
     setEligibilityChecked(true);
   };
 
-  const startVideoApplication = () => {
-    // Here you would implement the logic to start the video application
-    alert("Starting video application process...");
-    // Redirect to video application page or open a modal
+  const resetForm = () => {
+    setEligibilityChecked(false);
+    setShowResult(false);
+    setApplicationMode(null);
+    setCurrentQuestionIndex(0);
+    setShowQuery(false);
+    
+    // Stop any active streams
+    if (userStream) {
+      userStream.getTracks().forEach(track => track.stop());
+      setUserStream(null);
+    }
   };
 
-  if (!isSignedIn) return null; // Prevents UI flickering
+  // Function to play video
+  const playVideo = (folder, videoName, videoElementId) => {
+    return new Promise((resolve) => {
+      const videoElement = document.getElementById(videoElementId);
+      if (!videoElement) {
+        resolve();
+        return;
+      }
+      
+      const videoSource = videoElement.querySelector('source');
+      videoSource.src = `Videos/${folder}/${videoName}`;
+      videoElement.load();
+      
+      videoElement.onended = () => {
+        resolve();
+      };
+      
+      videoElement.play().catch((error) => {
+        console.error("Error playing video:", error);
+        resolve();
+      });
+    });
+  };
+
+  // Start video application
+  const startVideoApplication = async () => {
+    setApplicationMode('video');
+    setEligibilityChecked(false);
+    setShowResult(false);
+    
+    // Play intro video
+    await playVideo("Intro", "intro.mp4", "avatarVideo");
+    playNextQuestion();
+  };
+
+  // Play next question in video application
+  const playNextQuestion = async () => {
+    if (currentQuestionIndex < questions.length) {
+      let questionVideo = questions[currentQuestionIndex].video;
+      await playVideo("Question Videos", questionVideo, "avatarVideo");
+    } else {
+      await playVideo("Intro", "query.mp4", "avatarVideo");
+      setUserAnswerText("All questions answered! Ask any query now.");
+      setShowQuery(true);
+    }
+  };
+
+  // Start recording user's answer
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      setUserStream(stream);
+      
+      const videoElement = document.getElementById("userWebcam");
+      if (videoElement) {
+        videoElement.srcObject = stream;
+      }
+      
+      const recorder = new MediaRecorder(stream);
+      setMediaRecorder(recorder);
+      
+      const chunks = [];
+      recorder.ondataavailable = (event) => {
+        chunks.push(event.data);
+        setRecordedChunks([...chunks]);
+      };
+      
+      recorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error("Error accessing media devices:", error);
+    }
+  };
+
+  // Stop recording
+  const stopRecording = () => {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      setIsRecording(false);
+      
+      // Simulate backend response
+      setTimeout(() => {
+        setUserAnswerText(`Answer: Recorded for "${questions[currentQuestionIndex].question}"`);
+        
+        // Move to next question
+        setCurrentQuestionIndex(currentQuestionIndex + 1);
+        setTimeout(playNextQuestion, 2000);
+      }, 1000);
+    }
+  };
+
+  // Handle query input
+  const handleQuery = () => {
+    let matchedVideo = null;
+    setErrorMessage("");
+    
+    for (let key in queryAnswers) {
+      if (queryInput.toLowerCase().includes(key)) {
+        matchedVideo = queryAnswers[key];
+        break;
+      }
+    }
+    
+    if (matchedVideo) {
+      playVideo("Answer Videos", matchedVideo, "avatarVideo");
+    } else {
+      setErrorMessage("Sorry, I don't have an answer for that.");
+    }
+  };
+
+  if (!isLoaded || !isSignedIn) return null; // Prevents UI flickering
 
   return (
     <div>
@@ -65,7 +222,29 @@ export default function Apply() {
         <h2 className="text-2xl font-bold">Apply for a Loan</h2>
         <p className="text-gray mt-2">Complete the application with AI-powered guidance.</p>
         
-        {!eligibilityChecked && (
+        {/* Application mode selection */}
+        {!applicationMode && !eligibilityChecked && (
+          <div className="mt-6">
+            <h3 className="text-xl font-semibold">Choose Application Method</h3>
+            <div className="mt-4 flex gap-4">
+              <button 
+                onClick={() => setApplicationMode('manual')}
+                className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 transition duration-300"
+              >
+                Manual Eligibility Check
+              </button>
+              <button 
+                onClick={startVideoApplication}
+                className="flex-1 bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 transition duration-300"
+              >
+                Video Application
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Manual Eligibility Form */}
+        {applicationMode === 'manual' && !eligibilityChecked && (
           <div className="mt-6">
             <h3 className="text-xl font-semibold">Loan Eligibility Checker</h3>
             <p className="text-gray mb-4">Please check your eligibility before proceeding.</p>
@@ -147,35 +326,127 @@ export default function Apply() {
                 </select>
               </div>
               
-              <button type="submit" className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition duration-300">Check Eligibility</button>
+              <div className="flex gap-4">
+                <button type="submit" className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition duration-300">
+                  Check Eligibility
+                </button>
+                <button 
+                  type="button" 
+                  onClick={resetForm}
+                  className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition duration-300"
+                >
+                  Cancel
+                </button>
+              </div>
             </form>
           </div>
         )}
         
+        {/* Video Application UI */}
+        {applicationMode === 'video' && (
+          <div className="mt-6">
+            <h3 className="text-xl font-semibold">Video Application</h3>
+            <p className="text-gray mb-4">Answer the questions to complete your application.</p>
+            
+            <div className="my-4 flex flex-col md:flex-row gap-4">
+              {/* Avatar Video */}
+              <div className="flex-1">
+                <p className="mb-2 font-medium">AI Assistant</p>
+                <video id="avatarVideo" className="w-full rounded-md" playsinline autoplay>
+                  <source id="videoSource" src="Videos/Intro/intro.mp4" type="video/mp4" />
+                </video>
+              </div>
+              
+              {/* User's Webcam */}
+              <div className="flex-1">
+                <p className="mb-2 font-medium">You</p>
+                <video id="userWebcam" className="w-full rounded-md" autoplay></video>
+              </div>
+            </div>
+            
+            <div className="my-4">
+              <h4 className="font-medium">Your Response:</h4>
+              <p id="userAnswer" className="p-2 bg-gray-100 rounded-md">{userAnswerText}</p>
+            </div>
+            
+            {/* Recording Controls */}
+            {!showQuery && (
+              <div className="flex gap-4 mt-4">
+                <button 
+                  id="startButton" 
+                  onClick={startRecording}
+                  disabled={isRecording}
+                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition duration-300 disabled:bg-gray-400"
+                >
+                  Start Answering
+                </button>
+                <button 
+                  id="stopButton" 
+                  onClick={stopRecording}
+                  disabled={!isRecording}
+                  className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition duration-300 disabled:bg-gray-400"
+                >
+                  Submit Answer
+                </button>
+              </div>
+            )}
+            
+            {/* Query Input */}
+            {showQuery && (
+              <div className="mt-4">
+                <h4 className="font-medium">Ask a Loan-related Question:</h4>
+                <div className="flex gap-2 mt-2">
+                  <input 
+                    type="text" 
+                    value={queryInput}
+                    onChange={(e) => setQueryInput(e.target.value)}
+                    className="flex-1 p-2 border rounded-md"
+                    placeholder="Type your question..."
+                  />
+                  <button 
+                    onClick={handleQuery}
+                    className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition duration-300"
+                  >
+                    Ask
+                  </button>
+                </div>
+                {errorMessage && (
+                  <p className="text-red-500 mt-2">{errorMessage}</p>
+                )}
+              </div>
+            )}
+            
+            <button 
+              onClick={resetForm}
+              className="mt-6 bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition duration-300"
+            >
+              Back to Options
+            </button>
+          </div>
+        )}
+        
+        {/* Eligibility Result */}
         {showResult && (
           <div className={`mt-6 p-4 rounded-md ${isEligible ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
             <p className="font-medium">{resultMessage}</p>
             
-            {isEligible && (
+            <div className="mt-4 flex gap-4">
+              {isEligible && (
+                <button 
+                  onClick={startVideoApplication}
+                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition duration-300"
+                >
+                  Start Video Application
+                </button>
+              )}
+              
               <button 
-                onClick={startVideoApplication}
-                className="mt-4 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition duration-300"
+                onClick={resetForm}
+                className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition duration-300"
               >
-                Start Video Application
+                {isEligible ? "Back to Options" : "Try Again"}
               </button>
-            )}
-            
-            {!isEligible && (
-              <button 
-                onClick={() => {
-                  setEligibilityChecked(false);
-                  setShowResult(false);
-                }}
-                className="mt-4 bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition duration-300"
-              >
-                Try Again
-              </button>
-            )}
+            </div>
           </div>
         )}
       </div>
