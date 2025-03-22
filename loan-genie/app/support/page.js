@@ -94,7 +94,7 @@ export default function Support() {
             {/* Error message */}
             {errorMessage && (
               <div id="errorMessage" className="mt-4 p-4 bg-red-100 text-red-700 rounded">
-                Sorry, we couldn't find a video that answers your question. Please try a different query.
+                Sorry, we couldnt find a video that answers your question. Please try a different query.
               </div>
             )}
           </div>

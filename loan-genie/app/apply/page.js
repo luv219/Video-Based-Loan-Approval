@@ -19,7 +19,7 @@ export default function Apply() {
   const [isRecording, setIsRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState(null);
   const [setRecordedChunks] = useState([]);
-  const [userAnswerText, setUserAnswerText] = useState("Your answer will appear here...");
+  const [setUserAnswerText] = useState("Your answer will appear here...");
   const [userStream, setUserStream] = useState(null);
   const [showQuery, setShowQuery] = useState(false);
   const [queryInput, setQueryInput] = useState("");
