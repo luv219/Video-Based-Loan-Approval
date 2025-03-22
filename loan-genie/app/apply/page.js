@@ -18,16 +18,28 @@ export default function Apply() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState(null);
-  const [setRecordedChunks] = useState([]);
-  const [setUserAnswerText] = useState("Your answer will appear here...");
+  const [recordedChunks, setRecordedChunks] = useState([]);
+  const [userAnswerText, setUserAnswerText] = useState("Your answer will appear here...");
   const [userStream, setUserStream] = useState(null);
   const [showQuery, setShowQuery] = useState(false);
   const [queryInput, setQueryInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   
+  // Document verification states
+  const [documentUploaded, setDocumentUploaded] = useState(false);
+  const [documentProcessing, setDocumentProcessing] = useState(false);
+  const [documentVerified, setDocumentVerified] = useState(false);
+  const [extractedDocumentText, setExtractedDocumentText] = useState("");
+  
+  // Video transcription states
+  const [transcriptionActive, setTranscriptionActive] = useState(false);
+  const [transcriptionText, setTranscriptionText] = useState("");
+  
   // Refs for direct DOM access
   const userWebcamRef = useRef(null);
   const avatarVideoRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const transcriptionRef = useRef(null);
 
   // Questions for video application
   const questions = [
@@ -59,8 +71,13 @@ export default function Apply() {
       if (userStream) {
         userStream.getTracks().forEach(track => track.stop());
       }
+      
+      // Stop speech recognition if active
+      if (transcriptionActive && window.speechRecognition) {
+        window.speechRecognition.stop();
+      }
     };
-  }, [isSignedIn, isLoaded, router, userStream]);
+  }, [isSignedIn, isLoaded, router, userStream, transcriptionActive]);
 
   // Initialize webcam as soon as video mode is selected
   useEffect(() => {
@@ -139,6 +156,12 @@ export default function Apply() {
     setQueryInput("");
     setErrorMessage("");
     setUserAnswerText("Your answer will appear here...");
+    setDocumentUploaded(false);
+    setDocumentProcessing(false);
+    setDocumentVerified(false);
+    setExtractedDocumentText("");
+    setTranscriptionActive(false);
+    setTranscriptionText("");
     
     // Stop any active streams
     if (userStream) {
@@ -153,6 +176,11 @@ export default function Apply() {
     setMediaRecorder(null);
     setRecordedChunks([]);
     setIsRecording(false);
+    
+    // Stop speech recognition if active
+    if (transcriptionActive && window.speechRecognition) {
+      window.speechRecognition.stop();
+    }
   };
 
   // Function to play video
@@ -224,6 +252,9 @@ export default function Apply() {
       
       recorder.start();
       setIsRecording(true);
+      
+      // Start speech recognition for this recording
+      startSpeechRecognition();
     } catch (error) {
       console.error("Error starting recording:", error);
       setUserAnswerText("Error: Unable to start recording. Please check your camera and microphone permissions.");
@@ -236,14 +267,21 @@ export default function Apply() {
       mediaRecorder.stop();
       setIsRecording(false);
       
-      // Simulate backend response
+      // Stop speech recognition
+      if (window.speechRecognition) {
+        window.speechRecognition.stop();
+        setTranscriptionActive(false);
+      }
+      
+      // Update user answer text with transcription
+      setUserAnswerText(`Answer: ${transcriptionText || "Recorded"} for "${questions[currentQuestionIndex].question}"`);
+      
+      // Move to next question
       setTimeout(() => {
-        setUserAnswerText(`Answer: Recorded for "${questions[currentQuestionIndex].question}"`);
-        
-        // Move to next question
         setCurrentQuestionIndex(prevIndex => prevIndex + 1);
-        setTimeout(playNextQuestion, 2000);
-      }, 1000);
+        setTranscriptionText(""); // Reset transcription for next question
+        setTimeout(playNextQuestion, 1000);
+      }, 1500);
     }
   };
 
@@ -264,6 +302,64 @@ export default function Apply() {
     } else {
       setErrorMessage("Sorry, I don't have an answer for that.");
     }
+  };
+  
+  // Document processing functions
+  const handleDocumentUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setDocumentUploaded(true);
+    setDocumentProcessing(true);
+    
+    // Simulate document processing
+    setTimeout(() => {
+      // In a real application, this would call a backend API to process the image
+      // using the OpenCV and Tesseract functionality
+      const simulatedExtractedText = `
+ID Type: Aadhaar Card
+Number: XXXX XXXX XXXX
+Name: ${document.getElementById("name")?.value || "Sample User"}
+DOB: 01/01/1990
+Gender: ${document.getElementById("gender")?.value || "Male"}
+Address: 123 Sample Street, City, State - 123456
+      `.trim();
+      
+      setExtractedDocumentText(simulatedExtractedText);
+      setDocumentProcessing(false);
+      setDocumentVerified(true);
+    }, 2000);
+  };
+  
+  // Speech recognition for video transcription
+  const startSpeechRecognition = () => {
+    if (!("SpeechRecognition" in window) && !("webkitSpeechRecognition" in window)) {
+      console.error("Speech Recognition is not supported in this browser.");
+      return;
+    }
+    
+    // Create a new speech recognition instance
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    // Configure speech recognition
+    recognition.lang = "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    
+    // Store in window to allow stopping in cleanup
+    window.speechRecognition = recognition;
+    
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript + " ";
+      }
+      setTranscriptionText(transcript);
+    };
+    
+    recognition.start();
+    setTranscriptionActive(true);
   };
 
   if (!isLoaded || !isSignedIn) return null; // Prevents UI flickering
@@ -296,13 +392,66 @@ export default function Apply() {
           </div>
         )}
         
+        {/* Document Verification Section */}
+        {(applicationMode === 'manual' || applicationMode === 'video') && !documentVerified && (
+          <div className="mt-6 border-t pt-4">
+            <h3 className="text-xl font-semibold">ID Verification</h3>
+            <p className="text-gray mb-4">Upload your ID document (Aadhaar Card, PAN, etc.) for verification.</p>
+            
+            <div className="flex items-center justify-center w-full">
+              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <svg className="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
+                  </svg>
+                  <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                  <p className="text-xs text-gray-500">PNG, JPG (MAX. 2MB)</p>
+                </div>
+                <input 
+                  ref={fileInputRef}
+                  type="file" 
+                  className="hidden" 
+                  accept="image/*"
+                  onChange={handleDocumentUpload}
+                />
+              </label>
+            </div>
+            
+            {documentUploaded && (
+              <div className="mt-4">
+                {documentProcessing ? (
+                  <div className="flex items-center justify-center">
+                    <svg className="animate-spin h-5 w-5 mr-3 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Processing document...</span>
+                  </div>
+                ) : (
+                  <div className="bg-green-50 p-4 rounded-md">
+                    <h4 className="font-medium text-green-800">Document Verified Successfully</h4>
+                    <pre className="mt-2 bg-white p-3 rounded-md text-xs overflow-x-auto">
+                      {extractedDocumentText}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        
         {/* Manual Eligibility Form */}
-        {applicationMode === 'manual' && !eligibilityChecked && (
+        {applicationMode === 'manual' && !eligibilityChecked && documentVerified && (
           <div className="mt-6">
             <h3 className="text-xl font-semibold">Loan Eligibility Checker</h3>
             <p className="text-gray mb-4">Please check your eligibility before proceeding.</p>
             
             <form className="mt-3" onSubmit={handleEligibilityCheck}>
+              <div className="mb-3">
+                <label htmlFor="name" className="block text-sm font-medium">Full Name</label>
+                <input type="text" id="name" name="name" className="mt-1 block w-full rounded-md focus:border-blue-500 focus:ring-blue-500" required />
+              </div>
+              
               <div className="mb-3">
                 <label htmlFor="gender" className="block text-sm font-medium">Gender</label>
                 <select id="gender" name="gender" className="mt-1 block w-full rounded-md focus:border-blue-500 focus:ring-blue-500" required>
@@ -396,7 +545,7 @@ export default function Apply() {
         )}
         
         {/* Video Application UI */}
-        {applicationMode === 'video' && (
+        {applicationMode === 'video' && documentVerified && (
           <div className="mt-6">
             <h3 className="text-xl font-semibold">Video Application</h3>
             <p className="text-gray mb-4">Answer the questions to complete your application.</p>
@@ -431,11 +580,17 @@ export default function Apply() {
                 {!userStream && <p className="text-sm text-center mt-2">Initializing camera...</p>}
               </div>
             </div>
-            {/*
+            
+            {/* Speech-to-Text Transcription */}
             <div className="my-4">
               <h4 className="font-medium">Your Response:</h4>
-              <p id="userAnswer" className="p-2 bg-gray-100 rounded-md">{userAnswerText}</p>
-            </div>*/}
+              <textarea
+                ref={transcriptionRef}
+                className="p-2 bg-gray-100 rounded-md w-full min-h-16"
+                value={transcriptionText || "Your answer will appear here..."}
+                readOnly
+              />
+            </div>
             
             {/* Recording Controls */}
             {!showQuery && (
@@ -524,11 +679,3 @@ export default function Apply() {
           50% { border-color: rgba(239, 68, 68, 1); }
           100% { border-color: rgba(239, 68, 68, 0.7); }
         }
-        
-        .pulse-recording {
-          animation: pulse 1.5s infinite;
-        }
-      `}</style>
-    </div>
-  );
-}
