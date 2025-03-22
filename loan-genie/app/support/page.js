@@ -7,14 +7,14 @@ export default function Support() {
   const [errorMessage, setErrorMessage] = useState(false);
   const [videoSrc, setVideoSrc] = useState(null);
   const videoRef = useRef(null);
-  
+
   const queryAnswers = {
     "cibil score": "CIBILScore.mp4",
     "late payment": "LatePayment.mp4",
     "loan eligibility": "LoanEligibility.mp4",
     "loan interest rate": "LoanRate.mp4",
     "secure loan vs unsecure loan": "SecureVsUnsecureLoan.mp4",
-    "types of loans": "TypesOfLoans.mp4"
+    "types of loans": "TypesOfLoans.mp4",
   };
 
   const handleQuery = () => {
@@ -24,14 +24,14 @@ export default function Support() {
 
   const playMatchingVideo = (userQuery) => {
     let matchedVideo = null;
-    
+
     for (let key in queryAnswers) {
       if (userQuery.includes(key)) {
         matchedVideo = queryAnswers[key];
         break;
       }
     }
-    
+
     if (matchedVideo) {
       setErrorMessage(false);
       setVideoSrc(`Videos/Answer Videos/${matchedVideo}`);
@@ -53,8 +53,10 @@ export default function Support() {
       <Navbar />
       <div className="p-10">
         <h2 className="text-3xl font-bold">Support & FAQs</h2>
-        <p className="text-gray-600 mt-2">Need help? Contact support or browse our FAQs.</p>
-        
+        <p className="text-gray-600 mt-2">
+          Need help? Contact support or browse our FAQs.
+        </p>
+
         {/* Query section */}
         <div className="mt-8">
           <h3 className="text-xl font-semibold mb-4">Ask a Question</h3>
@@ -72,14 +74,14 @@ export default function Support() {
               Search
             </button>
           </div>
-          
+
           {/* Video player - only show when there's a source */}
           <div className="mt-6">
             {videoSrc ? (
-              <video 
+              <video
                 ref={videoRef}
-                id="avatarVideo" 
-                controls 
+                id="avatarVideo"
+                controls
                 className="w-full max-w-2xl rounded shadow-lg"
               >
                 <source id="videoSource" src={videoSrc} type="video/mp4" />
@@ -87,19 +89,25 @@ export default function Support() {
               </video>
             ) : (
               <div className="w-full max-w-2xl h-64 bg-gray-100 rounded shadow-lg flex items-center justify-center">
-                <p className="text-gray-500">Search for a topic to see a video explanation</p>
+                <p className="text-gray-500">
+                  Search for a topic to see a video explanation
+                </p>
               </div>
             )}
-            
+
             {/* Error message */}
             {errorMessage && (
-              <div id="errorMessage" className="mt-4 p-4 bg-red-100 text-red-700 rounded">
-                Sorry, we couldnt find a video that answers your question. Please try a different query.
+              <div
+                id="errorMessage"
+                className="mt-4 p-4 bg-red-100 text-red-700 rounded"
+              >
+                Sorry, we couldnt find a video that answers your question.
+                Please try a different query.
               </div>
             )}
           </div>
         </div>
-        
+
         {/* FAQ topics */}
         <div className="mt-10">
           <h3 className="text-xl font-semibold mb-4">Suggested Topics</h3>
