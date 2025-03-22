@@ -431,11 +431,11 @@ export default function Apply() {
                 {!userStream && <p className="text-sm text-center mt-2">Initializing camera...</p>}
               </div>
             </div>
-            
+            {/*
             <div className="my-4">
               <h4 className="font-medium">Your Response:</h4>
               <p id="userAnswer" className="p-2 bg-gray-100 rounded-md">{userAnswerText}</p>
-            </div>
+            </div>*/}
             
             {/* Recording Controls */}
             {!showQuery && (
